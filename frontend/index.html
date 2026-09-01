@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Network Traffic Monitor</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Live Network Traffic Monitor</h1>
+    
+    <div class="status-bar">
+      Status: <span id="status" class="disconnected">Connecting...</span>
+    </div>
+
+    <h2>Real-Time Packet Log</h2>
+    <div class="table-container">
+      <table id="logTable">
+        <thead>
+          <tr>
+            <th>Protocol</th>
+            <th>Source IP</th>
+            <th>Destination IP</th>
+            <th>Length (Bytes)</th>
+          </tr>
+        </thead>
+        <tbody id="logBody">
+          <!-- Live packet rows dynamically injected here -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

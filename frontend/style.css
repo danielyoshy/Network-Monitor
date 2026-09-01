@@ -1,0 +1,57 @@
+body {
+  font-family: Arial, sans-serif;
+  background-color: #1e1e2e;
+  color: #cdd6f4;
+  margin: 0;
+  padding: 20px;
+}
+
+.container {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.status-bar {
+  margin-bottom: 20px;
+  font-weight: bold;
+}
+
+.connected { color: #a6e3a1; }
+.disconnected { color: #f38ba8; }
+
+.table-container {
+  overflow-y: auto;
+  max-height: 500px;
+  background-color: #181825;
+  border-radius: 8px;
+  border: 1px solid #313244;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th, td {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid #313244;
+}
+
+th {
+  background-color: #11111b;
+  position: sticky;
+  top: 0;
+}
+
+.badge {
+  font-weight: bold;
+  padding: 4px 8px;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+.badge.tcp { background-color: #89b4fa; color: #11111b; }
+.badge.udp { background-color: #fab387; color: #11111b; }
+.badge.arp { background-color: #f9e2af; color: #11111b; }
+.badge.other { background-color: #a6adc8; color: #11111b; }
