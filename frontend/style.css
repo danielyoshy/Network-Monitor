@@ -149,6 +149,13 @@ tr:hover td { background-color: rgba(255, 255, 255, 0.05); }
 /* Pause button active state */
 .btn.paused { background-color: var(--accent-red); color: var(--bg-base); }
 
+/* Remote-endpoint scope badge (LAN / multicast / broadcast / country) */
+.scope { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 0.75rem; font-weight: bold; }
+.scope-lan { background-color: var(--accent-green); color: var(--bg-base); }
+.scope-mcast { background-color: var(--accent-blue); color: var(--bg-base); }
+.scope-bcast { background-color: var(--accent-peach); color: var(--bg-base); }
+.scope-country { background-color: var(--bg-surface); color: var(--text-muted); font-weight: normal; }
+
 /* Drawer detail list */
 .detail-list { display: grid; grid-template-columns: 40% 60%; gap: 8px 12px; margin: 0; }
 .detail-list dt { color: var(--text-muted); font-size: 0.85rem; }

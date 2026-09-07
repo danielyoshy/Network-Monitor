@@ -54,8 +54,9 @@ def _subdomain(qname: str) -> str:
 class DetectionEngine:
     """Thread-safe. One process-wide instance, shared by sniffer and API."""
 
-    def __init__(self, local_ips):
-        self.local_ips = local_ips
+    def __init__(self, inspector):
+        # Shared InterfaceInspector — its is_local_ip() reflects live addressing.
+        self.inspector = inspector
         import threading
         self._lock = threading.Lock()
 
@@ -95,8 +96,9 @@ class DetectionEngine:
                 self._observe_arp(src_ip, pkt.get("src_mac", ""), now)
                 return
 
+            is_local = self.inspector.is_local_ip
             # --- Beaconing: outbound re-contacts to a remote host ---
-            if src_ip in self.local_ips and dst_ip not in self.local_ips:
+            if is_local(src_ip) and not is_local(dst_ip):
                 remote = dst_ip
                 last = self._beacon_last.get(remote)
                 if last is None or (now - last) >= config.BEACON_MIN_GAP:
@@ -105,7 +107,7 @@ class DetectionEngine:
 
             # --- Port scan: a source hitting many of our ports ---
             dst_port = pkt["dst_port"]
-            if dst_port and dst_ip in self.local_ips:
+            if dst_port and is_local(dst_ip):
                 self._scan[src_ip].append((now, dst_ip, dst_port))
 
             # --- DNS exfil: outbound DNS queries ---
@@ -299,11 +301,11 @@ class DetectionEngine:
         return out
 
 
-# Built lazily so it can share the FlowTable's discovered local IPs.
+# Built lazily so it can share the FlowTable's live InterfaceInspector.
 engine = None
 
 
-def init_engine(local_ips):
+def init_engine(inspector):
     global engine
-    engine = DetectionEngine(local_ips)
+    engine = DetectionEngine(inspector)
     return engine

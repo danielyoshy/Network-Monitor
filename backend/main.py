@@ -55,7 +55,12 @@ async def _aggregation_loop():
     """Roll the FlowTable once per window and push the snapshot to all clients."""
     while True:
         await asyncio.sleep(config.EMIT_INTERVAL)
-        # Both calls briefly hold a lock but do no I/O, so they're safe inline.
+        # Re-read interface addressing each tick so a changed host IP (VPN/DHCP)
+        # doesn't silently flip flow direction (mirrors Sniffnet's set_addresses).
+        # This is the only step that touches the OS (route-table read ~0.5ms), so
+        # it runs in a worker thread to keep the event loop strictly non-blocking.
+        await asyncio.to_thread(flow_table.refresh_interfaces)
+        # tick()/evaluate() are in-memory only (short lock, no I/O), safe inline.
         snapshot = flow_table.tick(config.EMIT_INTERVAL)
         snapshot["alerts"] = detectors.engine.evaluate() if detectors.engine else []
         await manager.broadcast(snapshot)

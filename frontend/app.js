@@ -166,8 +166,18 @@ function renderAlerts(alerts) {
 function matchesFilter(f) {
   if (!filterText) return true;
   const hay = `${f.remote_ip} ${f.hostname} ${f.country} ${f.asn} ${f.org} `
-    + `${f.app_proto} ${f.proto} ${f.remote_port}`.toLowerCase();
+    + `${f.app_proto} ${f.proto} ${f.remote_port} ${f.traffic_type} `
+    + `${f.is_lan ? "lan" : ""}`.toLowerCase();
   return hay.includes(filterText);
+}
+
+// Scope label for the remote endpoint: LAN / multicast / broadcast / country.
+function scopeLabel(f) {
+  if (f.traffic_type === "multicast") return { text: "MCAST", cls: "scope-mcast" };
+  if (f.traffic_type === "broadcast") return { text: "BCAST", cls: "scope-bcast" };
+  if (f.is_lan) return { text: "LAN", cls: "scope-lan" };
+  if (f.country) return { text: f.country, cls: "scope-country" };
+  return { text: "—", cls: "" };
 }
 
 function renderFlows(flows) {
@@ -180,12 +190,12 @@ function renderFlows(flows) {
   const frag = document.createDocumentFragment();
   visible.forEach((f) => {
     const host = f.hostname || f.remote_ip;
-    const flag = f.country ? `${f.country} ` : "";
+    const scope = scopeLabel(f);
     const org = f.asn ? `${f.asn}${f.org ? " · " + f.org : ""}` : (f.org || "—");
     const row = document.createElement("tr");
     row.innerHTML = `
       <td><strong>${host}</strong><div class="sub">${f.remote_ip}:${f.remote_port}</div></td>
-      <td>${flag || "—"}</td>
+      <td><span class="scope ${scope.cls}">${scope.text}</span></td>
       <td class="sub">${org}</td>
       <td><span class="pill">${f.app_proto}</span></td>
       <td>${fmtRate(f.down_bps)}<div class="sub">${fmtBytes(f.down_bytes)}</div></td>
@@ -218,6 +228,8 @@ function openDrawer(key) {
     ["ASN", f.asn || "—"],
     ["Organisation", f.org || "—"],
     ["Local IP", f.local_ip],
+    ["Scope", f.is_lan ? "LAN (local network)" : "Internet"],
+    ["Traffic type", f.traffic_type],
     ["Transport", f.proto],
     ["Application", f.app_proto],
     ["Download", `${fmtRate(f.down_bps)} — ${fmtBytes(f.down_bytes)} total`],

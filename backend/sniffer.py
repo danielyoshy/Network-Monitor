@@ -15,8 +15,9 @@ from scapy.all import ARP, DNS, DNSQR, IP, IPv6, TCP, UDP, sniff
 from backend import config, detectors
 from backend.flows import flow_table
 
-# Share the FlowTable's discovered local IPs so direction logic stays consistent.
-detectors.init_engine(flow_table.local_ips)
+# Share the FlowTable's live InterfaceInspector so direction logic stays
+# consistent between aggregation and detection, and tracks address changes.
+detectors.init_engine(flow_table.inspector)
 
 
 def _parse(packet):

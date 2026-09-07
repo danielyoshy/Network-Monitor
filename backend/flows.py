@@ -5,43 +5,21 @@ must be cheap). An aggregator calls `tick()` once per second to roll up the
 interval counters into throughput figures and produce a UI snapshot.
 
 Flows are keyed *bidirectionally*: A->B and B->A collapse into one Flow so a
-conversation (e.g. one HTTPS stream) is a single row. Direction is decided per
-packet by comparing against the host's local IPs, which lets us split traffic
-into upload (host is source) and download (host is destination).
+conversation (e.g. one HTTPS stream) is a single row. Direction, traffic type
+(unicast/multicast/broadcast) and LAN-vs-internet scope are decided per packet
+by the InterfaceInspector, which classifies each endpoint against the host's
+live interface addressing (ported from Sniffnet's manage_packets logic).
 """
-import ipaddress
-import socket
 import threading
 import time
 
 from backend import config
 from backend.enrichment import enricher
+from backend.interfaces import InterfaceInspector
 
 # Transport protocol numbers we label; everything else shows its number/name.
 # -1 is the sniffer's ARP sentinel (ARP has no L4 transport).
 _PROTO_NAMES = {6: "TCP", 17: "UDP", 1: "ICMP", 58: "ICMPv6", -1: "ARP"}
-
-
-def discover_local_ips():
-    """Best-effort set of this host's own IP addresses.
-
-    Used for direction tagging. Loopback is always included; the primary
-    outbound address is discovered by opening a UDP socket (no packets sent).
-    """
-    ips = {"127.0.0.1", "::1"}
-    try:
-        for info in socket.getaddrinfo(socket.gethostname(), None):
-            ips.add(info[4][0])
-    except socket.gaierror:
-        pass
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))  # never actually transmits
-        ips.add(s.getsockname()[0])
-        s.close()
-    except OSError:
-        pass
-    return ips
 
 
 class Flow:
@@ -49,19 +27,22 @@ class Flow:
 
     __slots__ = (
         "proto", "app_proto", "local_ip", "local_port", "remote_ip",
-        "remote_port", "first_seen", "last_seen",
+        "remote_port", "traffic_type", "is_lan", "first_seen", "last_seen",
         "up_bytes", "down_bytes", "up_packets", "down_packets",
         "_iv_up", "_iv_down", "up_bps", "down_bps",
         "peak_up_bps", "peak_down_bps",
     )
 
-    def __init__(self, proto, app_proto, local_ip, local_port, remote_ip, remote_port, now):
+    def __init__(self, proto, app_proto, local_ip, local_port, remote_ip,
+                 remote_port, traffic_type, is_lan, now):
         self.proto = proto
         self.app_proto = app_proto
         self.local_ip = local_ip
         self.local_port = local_port
         self.remote_ip = remote_ip
         self.remote_port = remote_port
+        self.traffic_type = traffic_type
+        self.is_lan = is_lan
         self.first_seen = now
         self.last_seen = now
         self.up_bytes = self.down_bytes = 0
@@ -97,12 +78,23 @@ class FlowTable:
     def __init__(self):
         self._lock = threading.Lock()
         self._flows = {}  # canonical key -> Flow
-        self.local_ips = discover_local_ips()
+        # Live interface addressing; refreshed each tick (see refresh_interfaces).
+        self.inspector = InterfaceInspector()
         # Cumulative, never reset (folded totals of expired flows + live ones).
         self._closed_up_bytes = 0
         self._closed_down_bytes = 0
         self._peak_up_bps = 0
         self._peak_down_bps = 0
+
+    @property
+    def local_ips(self):
+        """This host's interface addresses (kept for callers/tests)."""
+        return self.inspector.local_ips
+
+    def refresh_interfaces(self):
+        """Re-read interface addressing. Called once per tick, mirroring
+        Sniffnet refreshing adapter addresses every second."""
+        self.inspector.refresh()
 
     @staticmethod
     def _key(src_ip, src_port, dst_ip, dst_port, proto):
@@ -119,18 +111,14 @@ class FlowTable:
         length = pkt["length"]
         now = pkt["timestamp"]
 
-        outgoing = src_ip in self.local_ips
-        if outgoing or dst_ip in self.local_ips:
-            # Normal case: one endpoint is us. Remote is the other side.
-            if outgoing:
-                local_ip, local_port = src_ip, src_port
-                remote_ip, remote_port = dst_ip, dst_port
-            else:
-                local_ip, local_port = dst_ip, dst_port
-                remote_ip, remote_port = src_ip, src_port
+        # Classify direction/type against live interface addressing (Sniffnet
+        # manage_packets logic ported into InterfaceInspector).
+        insp = self.inspector
+        outgoing = insp.get_traffic_direction(src_ip, dst_ip, src_port, dst_port)
+        if outgoing:
+            local_ip, local_port = src_ip, src_port
+            remote_ip, remote_port = dst_ip, dst_port
         else:
-            # Neither endpoint is local (mirrored/forwarded traffic): treat the
-            # source as remote and count it as inbound so it still shows up.
             local_ip, local_port = dst_ip, dst_port
             remote_ip, remote_port = src_ip, src_port
 
@@ -144,7 +132,10 @@ class FlowTable:
                 flow = Flow(
                     proto_name,
                     app_protocol(src_port, dst_port, proto_name),
-                    local_ip, local_port, remote_ip, remote_port, now,
+                    local_ip, local_port, remote_ip, remote_port,
+                    insp.get_traffic_type(dst_ip, outgoing),
+                    insp.is_lan(remote_ip),
+                    now,
                 )
                 self._flows[key] = flow
             flow.record(length, outgoing, now)
@@ -180,6 +171,8 @@ class FlowTable:
                     "country": meta["country"],
                     "asn": meta["asn"],
                     "org": meta["org"],
+                    "traffic_type": flow.traffic_type,
+                    "is_lan": flow.is_lan,
                     "up_bytes": flow.up_bytes,
                     "down_bytes": flow.down_bytes,
                     "up_bps": round(flow.up_bps),
