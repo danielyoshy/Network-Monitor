@@ -238,7 +238,7 @@ function renderHosts(hosts) {
       <td><strong>${cat.icon} ${escapeHtml(h.name)}</strong>${sub}</td>
       <td>
         <span class="scope ${cat.cls}">${cat.label}</span>
-        <div class="role-tag ${rl.cls}">${rl.label}</div>
+        <div class="role-tag ${rl.cls}">${escapeHtml(h.role_detail || rl.label)}</div>
       </td>
       <td class="sub">${escapeHtml(locationLabel(h))}</td>
       <td>${apps} ${moreApps}</td>
@@ -268,7 +268,7 @@ function openDrawer(ip) {
   document.getElementById("drawerTitle").textContent = `${cat.icon} ${h.name}`;
 
   const rows = [
-    ["Kind", role(h.role).label],
+    ["Kind", h.role_detail ? `${role(h.role).label} — ${h.role_detail}` : role(h.role).label],
     ["Type", cat.label],
     ["IP address", h.ip],
     ["Hostname", h.hostname || "(unresolved)"],

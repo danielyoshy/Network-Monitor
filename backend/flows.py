@@ -286,9 +286,13 @@ class FlowTable:
         for h in host_list:
             h["apps"] = sorted(h["apps"], key=h["apps"].get, reverse=True)
             h["flow_count"] = len(h["connections"])
+            ports = [c["remote_port"] for c in h["connections"]]
             h["role"] = labels.classify_role(
-                h["category"], h["is_lan"],
-                [c["remote_port"] for c in h["connections"]],
+                h["ip"], h["category"], h["is_lan"], ports, h["hostname"],
+            )
+            h["role_detail"] = (
+                labels.service_detail(ports, h["hostname"])
+                if h["role"] == "service" else ""
             )
         host_list.sort(key=lambda h: h["up_bps"] + h["down_bps"]
                        + (h["up_bytes"] + h["down_bytes"]) / 1e9, reverse=True)

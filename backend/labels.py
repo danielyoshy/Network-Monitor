@@ -92,6 +92,10 @@ _PROVIDER_RANGES = [
                  "64.120.128.0/17", "66.197.128.0/17", "108.175.32.0/20",
                  "185.2.220.0/22", "192.173.64.0/18", "198.38.96.0/19",
                  "198.45.48.0/20", "208.75.76.0/22"]),
+    # Steam / Valve (game download + matchmaking + Steam Datagram Relay)
+    ("Steam (Valve)", ["155.133.224.0/19", "162.254.192.0/21", "185.25.180.0/22",
+                       "205.196.6.0/24", "208.64.200.0/22", "208.78.164.0/22",
+                       "146.66.152.0/21", "153.254.86.0/24", "192.69.96.0/22"]),
 ]
 
 
@@ -141,6 +145,35 @@ _SERVICE_PORTS_HIGH = {
     8000, 8006, 8080, 8443, 8888, 9000, 9090, 27017, 32400, 51820,
 }
 
+# Gaming / matchmaking / game-server ports. Traffic to these is a *server*, not
+# a peer, even though they sit in the high-port range.
+_STEAM_PORT_RANGE = range(27000, 27037)          # Steam / Source: 27000-27036
+_STEAM_PORTS = {3478, 4379, 4380, 27014, 27015, 27018, 27019, 27036}  # +SDR/relay
+_GAME_PORTS = {
+    1119, 3074, 3479, 3480, 3658, 3724, 6112, 6250, 6672,
+    7777, 7778, 7779, 9308, 25565,  # Blizzard/Xbox/PSN/UE/Minecraft/etc.
+}
+
+# Reverse-DNS suffixes that unambiguously belong to server/CDN/game
+# infrastructure. Matched with a dot boundary (so "evil-valve.net.attacker.com"
+# does not match).
+_INFRA_DOMAINS = (
+    "valve.net", "steamserver.net", "steamcontent.com", "steampowered.com",
+    "akamai.net", "akamaiedge.net", "akamaitechnologies.com",
+    "amazonaws.com", "aws.com", "cloudfront.net",
+    "cloudflare.com", "cloudflare.net",
+    "1e100.net", "googleusercontent.com", "google.com", "googlevideo.com",
+    "gvt1.com", "gvt2.com",
+    "azure.com", "azureedge.net", "windows.net", "microsoft.com", "msedge.net",
+    "facebook.com", "fbcdn.net", "instagram.com", "whatsapp.net",
+    "netflix.com", "nflxvideo.net", "nflxso.net",
+    "fastly.net", "fastlylb.net",
+    "apple.com", "icloud.com", "aaplimg.com",
+    "twitch.tv", "ttvnw.net",
+    "riotgames.com", "riotcdn.net", "ea.com", "epicgames.com",
+    "xboxlive.com", "playstation.net", "battle.net", "blizzard.com",
+)
+
 
 def _as_int(port):
     try:
@@ -149,36 +182,78 @@ def _as_int(port):
         return None
 
 
+def _int_ports(ports):
+    return [p for p in (_as_int(x) for x in ports) if p and p > 0]
+
+
 def is_service_port(port):
     """True if `port` looks like a listening service (the server side)."""
     p = _as_int(port)
-    return p is not None and p > 0 and (p < 1024 or p in _SERVICE_PORTS_HIGH)
+    if p is None or p <= 0:
+        return False
+    if p < 1024 or p in _SERVICE_PORTS_HIGH:
+        return True
+    if p in _STEAM_PORT_RANGE or p in _STEAM_PORTS or p in _GAME_PORTS:
+        return True
+    return False
 
 
-def _is_ephemeral(port):
-    """True for a client-side / peer ephemeral port (not a known service)."""
-    p = _as_int(port)
-    return p is not None and p >= 1024 and not is_service_port(p)
+def is_infra_hostname(hostname):
+    """True if the reverse-DNS name belongs to known server/CDN/game infra."""
+    hn = (hostname or "").strip().strip(".").lower()
+    if not hn:
+        return False
+    return any(hn == d or hn.endswith("." + d) for d in _INFRA_DOMAINS)
 
 
-def classify_role(category, is_lan, remote_ports):
-    """Classify a host as ``"service"`` (server/service/infrastructure) or
+def _is_local_ip(ip):
+    """Strictly local/residential address space (RFC1918 / link-local / loopback)."""
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return addr.is_private or addr.is_link_local or addr.is_loopback
+
+
+def service_detail(remote_ports, hostname=""):
+    """A specific service sub-label (e.g. "Steam Infrastructure",
+    "Gaming Server"), or "" when the traffic isn't a recognisable game/service.
+    """
+    hn = (hostname or "").lower()
+    ports = _int_ports(remote_ports)
+    if (hn.endswith("valve.net") or hn.endswith("steamserver.net") or "steam" in hn
+            or any(p in _STEAM_PORT_RANGE or p in _STEAM_PORTS for p in ports)):
+        return "Steam Infrastructure"
+    if any(p in _GAME_PORTS for p in ports):
+        return "Gaming Server"
+    return ""
+
+
+def classify_role(ip, category, is_lan, remote_ports, hostname=""):
+    """Classify a host as ``"service"`` (server / service / infrastructure) or
     ``"personal"`` (a personal computer / end-user device).
 
-    Uses the endpoint category first, then port heuristics: a host reached on a
-    service port is a server; a peer reached only on ephemeral ports (a LAN
-    device, or an internet P2P/WebRTC/gaming peer) is a personal computer.
+    Resolution order:
+      1. Infrastructure categories (gateway/DNS/provider/multicast/broadcast).
+      2. This host itself -> personal.
+      3. Reverse-DNS match against known server/CDN/game domains -> service.
+      4. Any recognised service/gaming port on the remote side -> service.
+      5. **Fallback hierarchy:** ``personal`` is assigned ONLY when the peer is
+         strictly local (a verified LAN subnet or RFC1918/link-local address).
+         An outbound connection to an external IP is never "personal" by
+         default — it defaults to ``service``.
     """
     if category in ("gateway", "dns", "provider", "multicast", "broadcast"):
         return "service"
     if category == "self":
         return "personal"
+    if is_infra_hostname(hostname):
+        return "service"
     if any(is_service_port(p) for p in remote_ports):
         return "service"
-    if is_lan:
-        return "personal"           # a LAN peer offering no known service = a device
-    if any(_is_ephemeral(p) for p in remote_ports):
-        return "personal"           # internet peer on ephemeral ports = P2P/direct
+    # Peers are personal ONLY inside local/residential address space.
+    if is_lan or _is_local_ip(ip):
+        return "personal"
     return "service"
 
 
