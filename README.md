@@ -5,6 +5,32 @@ WebSockets, and JavaScript. Inspired by Sniffnet's architecture: raw frames are
 aggregated into **network flows**, enriched with geolocation/DNS metadata, and
 streamed to a live dashboard.
 
+## 🚀 Start the Website
+
+**The dashboard runs at [http://localhost:8000](http://localhost:8000) once the server is running.**
+
+Run these three steps from the **repository root** (the folder containing this README):
+
+```bash
+# 1. Install dependencies (first time only)
+pip install -r requirements.txt
+
+# 2. Start the server  ── run the terminal as Administrator / root (see note below)
+uvicorn backend.main:app --reload
+
+# 3. Open the dashboard in your browser
+#    http://localhost:8000
+```
+
+> **⚠️ Administrator / root is required** for packet capture.
+> - **Windows:** install [Npcap](https://npcap.com/) and run your terminal **as Administrator**.
+> - **macOS / Linux:** start it with `sudo` (e.g. `sudo uvicorn backend.main:app --reload`).
+>
+> **Do not** open `frontend/index.html` directly from the file system — the page
+> only works when served by the running server at `http://localhost:8000`.
+>
+> To stop the server, press `Ctrl+C` in the terminal.
+
 ## Architecture
 
 ```
@@ -40,26 +66,11 @@ collection:
 All thresholds are tunable via `NM_*` environment variables (see `backend/config.py`).
 Pin your gateway with `NM_GATEWAY_IP` / `NM_GATEWAY_MAC` to catch gateway spoofing directly.
 
-## Setup
+## Dependencies
 
-```bash
-pip install -r requirements.txt
-```
-
+`pip install -r requirements.txt` (see [Start the Website](#-start-the-website) above).
 `geoip2` is optional — without it (or without the GeoLite2 databases) country/ASN
 columns simply stay blank.
-
-## Run
-
-**Requires Administrator / root privileges** for packet capture (install
-[Npcap](https://npcap.com/) on Windows). Run from the repository root:
-
-```bash
-uvicorn backend.main:app --reload
-```
-
-Then open **http://localhost:8000** — FastAPI serves the dashboard itself. Do not
-open `frontend/index.html` from the filesystem; it must be served by the server.
 
 ## Configuration
 
