@@ -116,8 +116,28 @@ body {
   position: relative;
 }
 
+/* Host role filter tabs */
+.host-tabs { display: flex; gap: 8px; margin-top: 10px; }
+.host-tab {
+  background-color: var(--bg-surface);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  padding: 5px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.82rem;
+}
+.host-tab:hover { color: var(--text-main); }
+.host-tab.active { background-color: var(--accent-blue); color: var(--bg-base); border-color: var(--accent-blue); font-weight: bold; }
+.tab-count { opacity: 0.75; font-size: 0.78rem; }
+
+/* Role marker under the Type badge */
+.role-tag { font-size: 0.72rem; margin-top: 3px; }
+.role-service { color: var(--accent-blue); }
+.role-personal { color: var(--accent-peach); }
+
 /* Tables */
-.table-container { overflow-y: auto; max-height: calc(100% - 30px); margin-top: 10px; }
+.table-container { overflow-y: auto; max-height: calc(100% - 74px); margin-top: 10px; }
 table { width: 100%; border-collapse: collapse; text-align: left; }
 th { background-color: var(--bg-surface); padding: 10px; position: sticky; top: 0; font-size: 0.9rem; color: var(--text-muted); }
 td { padding: 10px; border-bottom: 1px solid var(--border); font-size: 0.9rem; }

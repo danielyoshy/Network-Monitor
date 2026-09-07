@@ -51,6 +51,12 @@ uvicorn backend.main:app --reload
   device" (or its hostname), `8.8.8.8` → "🧭 Google DNS". Every host's
   individual connections are still one click away in the detail drawer, and the
   raw IP is always shown alongside the label.
+- **Servers vs. personal computers** — each host is also tagged by role, so you
+  can split "🖧 Servers & Services" (websites, cloud, DNS, your router) from
+  "💻 Personal Computers" (other devices on your network, peer-to-peer) with the
+  filter tabs above the host list. The role is inferred from port behaviour
+  (a peer listening on a service port is a server; one seen only on ephemeral
+  ports is an end-user device).
 - **Broadcast loop** — an asyncio aggregator snapshots the flow table each second
   and pushes it to all connected dashboards, decoupled from the capture thread.
 

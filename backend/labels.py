@@ -132,6 +132,56 @@ def provider_for(ip):
     return name
 
 
+# --- Role classification: service/server vs personal computer ----------------
+# A port is a "service port" if a listener there is offering a service (the
+# server side of a conversation). Everything <1024 is well-known; these are the
+# common registered/high service ports a desktop actually meets.
+_SERVICE_PORTS_HIGH = {
+    1194, 1723, 3306, 3389, 5000, 5060, 5061, 5222, 5432, 5900, 6379,
+    8000, 8006, 8080, 8443, 8888, 9000, 9090, 27017, 32400, 51820,
+}
+
+
+def _as_int(port):
+    try:
+        return int(port)
+    except (TypeError, ValueError):
+        return None
+
+
+def is_service_port(port):
+    """True if `port` looks like a listening service (the server side)."""
+    p = _as_int(port)
+    return p is not None and p > 0 and (p < 1024 or p in _SERVICE_PORTS_HIGH)
+
+
+def _is_ephemeral(port):
+    """True for a client-side / peer ephemeral port (not a known service)."""
+    p = _as_int(port)
+    return p is not None and p >= 1024 and not is_service_port(p)
+
+
+def classify_role(category, is_lan, remote_ports):
+    """Classify a host as ``"service"`` (server/service/infrastructure) or
+    ``"personal"`` (a personal computer / end-user device).
+
+    Uses the endpoint category first, then port heuristics: a host reached on a
+    service port is a server; a peer reached only on ephemeral ports (a LAN
+    device, or an internet P2P/WebRTC/gaming peer) is a personal computer.
+    """
+    if category in ("gateway", "dns", "provider", "multicast", "broadcast"):
+        return "service"
+    if category == "self":
+        return "personal"
+    if any(is_service_port(p) for p in remote_ports):
+        return "service"
+    if is_lan:
+        return "personal"           # a LAN peer offering no known service = a device
+    if any(_is_ephemeral(p) for p in remote_ports):
+        return "personal"           # internet peer on ephemeral ports = P2P/direct
+    return "service"
+
+
 def describe(ip, *, is_self=False, is_gateway=False, is_lan=False,
              traffic_type="unicast", hostname="", org=""):
     """Produce a friendly display name and a category for an endpoint.

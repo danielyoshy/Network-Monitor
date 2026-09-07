@@ -2,6 +2,7 @@
 let isPaused = false;
 let latestSnapshot = null;   // most recent snapshot, kept for search + drawer re-render
 let filterText = "";
+let roleFilter = "all";      // "all" | "service" | "personal"
 const HISTORY = 60;          // seconds of history retained on the time-series charts
 
 // --- FORMATTING HELPERS -------------------------------------------------
@@ -177,15 +178,23 @@ const CATEGORY = {
 };
 function category(cat) { return CATEGORY[cat] || CATEGORY.internet; }
 
+// Role: server/service vs personal computer.
+const ROLE = {
+  service:  { label: "Server / Service", cls: "role-service" },
+  personal: { label: "Personal computer", cls: "role-personal" },
+};
+function role(r) { return ROLE[r] || ROLE.service; }
+
 function escapeHtml(s) {
   return String(s).replace(/[&<>"]/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 }
 
 function matchesFilter(h) {
+  if (roleFilter !== "all" && (h.role || "service") !== roleFilter) return false;
   if (!filterText) return true;
   const hay = `${h.name} ${h.ip} ${h.hostname} ${h.country} ${h.asn} ${h.org} `
-    + `${(h.apps || []).join(" ")} ${category(h.category).label} `
+    + `${(h.apps || []).join(" ")} ${category(h.category).label} ${role(h.role).label} `
     + `${h.is_lan ? "lan" : ""}`.toLowerCase();
   return hay.includes(filterText);
 }
@@ -202,6 +211,14 @@ function locationLabel(h) {
 
 function renderHosts(hosts) {
   const tbody = document.getElementById("flowsBody");
+
+  // Tab counts always reflect the full host set (before the role/text filter).
+  const nService = hosts.filter((h) => (h.role || "service") === "service").length;
+  const nPersonal = hosts.filter((h) => (h.role || "service") === "personal").length;
+  document.getElementById("countAll").textContent = `(${hosts.length})`;
+  document.getElementById("countService").textContent = `(${nService})`;
+  document.getElementById("countPersonal").textContent = `(${nPersonal})`;
+
   const visible = hosts.filter(matchesFilter);
   document.getElementById("flowCount").textContent =
     `(${visible.length}${hosts.length !== visible.length ? ` / ${hosts.length}` : ""})`;
@@ -210,6 +227,7 @@ function renderHosts(hosts) {
   const frag = document.createDocumentFragment();
   visible.forEach((h) => {
     const cat = category(h.category);
+    const rl = role(h.role);
     // Show the friendly name; keep the raw IP as a subtitle unless the name
     // already *is* the IP (then don't repeat it).
     const sub = h.name === h.ip ? "" : `<div class="sub">${escapeHtml(h.ip)}</div>`;
@@ -218,7 +236,10 @@ function renderHosts(hosts) {
     const row = document.createElement("tr");
     row.innerHTML = `
       <td><strong>${cat.icon} ${escapeHtml(h.name)}</strong>${sub}</td>
-      <td><span class="scope ${cat.cls}">${cat.label}</span></td>
+      <td>
+        <span class="scope ${cat.cls}">${cat.label}</span>
+        <div class="role-tag ${rl.cls}">${rl.label}</div>
+      </td>
       <td class="sub">${escapeHtml(locationLabel(h))}</td>
       <td>${apps} ${moreApps}</td>
       <td>${fmtRate(h.down_bps)}<div class="sub">${fmtBytes(h.down_bytes)}</div></td>
@@ -247,6 +268,7 @@ function openDrawer(ip) {
   document.getElementById("drawerTitle").textContent = `${cat.icon} ${h.name}`;
 
   const rows = [
+    ["Kind", role(h.role).label],
     ["Type", cat.label],
     ["IP address", h.ip],
     ["Hostname", h.hostname || "(unresolved)"],
@@ -289,6 +311,16 @@ function openDrawer(ip) {
 document.getElementById("globalSearch").addEventListener("input", (e) => {
   filterText = e.target.value.trim().toLowerCase();
   if (latestSnapshot) renderHosts(latestSnapshot.hosts || []);  // re-filter without waiting for next tick
+});
+
+// Role tabs: separate servers/services from personal computers.
+document.getElementById("hostTabs").addEventListener("click", (e) => {
+  const tab = e.target.closest(".host-tab");
+  if (!tab) return;
+  roleFilter = tab.dataset.role;
+  document.querySelectorAll(".host-tab").forEach((t) =>
+    t.classList.toggle("active", t === tab));
+  if (latestSnapshot) renderHosts(latestSnapshot.hosts || []);
 });
 
 document.getElementById("togglePause").addEventListener("click", (e) => {

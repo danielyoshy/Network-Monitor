@@ -74,6 +74,11 @@
     <section class="bottom-panel">
       <div class="panel table-panel">
         <h3>Network Hosts <span id="flowCount" class="muted-count"></span></h3>
+        <div class="host-tabs" id="hostTabs">
+          <button class="host-tab active" data-role="all">All <span class="tab-count" id="countAll"></span></button>
+          <button class="host-tab" data-role="service">🖧 Servers &amp; Services <span class="tab-count" id="countService"></span></button>
+          <button class="host-tab" data-role="personal">💻 Personal Computers <span class="tab-count" id="countPersonal"></span></button>
+        </div>
         <div class="table-container">
           <table id="flowsTable">
             <thead>
