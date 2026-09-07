@@ -13,7 +13,7 @@ live interface addressing (ported from Sniffnet's manage_packets logic).
 import threading
 import time
 
-from backend import config
+from backend import config, labels
 from backend.enrichment import enricher
 from backend.interfaces import InterfaceInspector
 
@@ -202,6 +202,8 @@ class FlowTable:
         for e in entries:
             protocols[e["app_proto"]] = protocols.get(e["app_proto"], 0) + 1
 
+        hosts = self._group_by_host(entries)
+
         return {
             "timestamp": now,
             "global": {
@@ -210,13 +212,83 @@ class FlowTable:
                 "peak_upload_bps": round(self._peak_up_bps),
                 "peak_download_bps": round(self._peak_down_bps),
                 "active_flows": active_flows,
+                "active_hosts": len(hosts),
                 "total_up_bytes": self._closed_up_bytes + live_up,
                 "total_down_bytes": self._closed_down_bytes + live_down,
                 "truncated_flows": truncated,
             },
             "protocols": protocols,
+            "hosts": hosts,
             "flows": entries,
         }
+
+    def _group_by_host(self, entries):
+        """Collapse per-flow entries into one row per remote host (IP).
+
+        This is what makes the dashboard readable: instead of the same peer
+        appearing once per port/protocol, each host is a single labelled row
+        with its totals, the apps it's talking, and its individual connections
+        nested for drill-down.
+        """
+        insp = self.inspector
+        hosts = {}
+        for e in entries:
+            ip = e["remote_ip"]
+            h = hosts.get(ip)
+            if h is None:
+                label = labels.describe(
+                    ip,
+                    is_self=insp.is_local_ip(ip),
+                    is_gateway=insp.is_gateway(ip),
+                    is_lan=e["is_lan"],
+                    traffic_type=e["traffic_type"],
+                    hostname=e["hostname"],
+                    org=e["org"],
+                )
+                h = {
+                    "ip": ip,
+                    "name": label["name"],
+                    "category": label["category"],
+                    "hostname": e["hostname"],
+                    "country": e["country"],
+                    "asn": e["asn"],
+                    "org": e["org"],
+                    "is_lan": e["is_lan"],
+                    "traffic_type": e["traffic_type"],
+                    "up_bytes": 0, "down_bytes": 0,
+                    "up_bps": 0, "down_bps": 0,
+                    "packets": 0,
+                    "apps": {},          # app_proto -> connection count
+                    "connections": [],   # per-flow detail for the drawer
+                }
+                hosts[ip] = h
+            h["up_bytes"] += e["up_bytes"]
+            h["down_bytes"] += e["down_bytes"]
+            h["up_bps"] += e["up_bps"]
+            h["down_bps"] += e["down_bps"]
+            h["packets"] += e["packets"]
+            h["apps"][e["app_proto"]] = h["apps"].get(e["app_proto"], 0) + 1
+            h["connections"].append({
+                "app_proto": e["app_proto"],
+                "proto": e["proto"],
+                "remote_port": e["remote_port"],
+                "local_ip": e["local_ip"],
+                "up_bps": e["up_bps"], "down_bps": e["down_bps"],
+                "up_bytes": e["up_bytes"], "down_bytes": e["down_bytes"],
+                "packets": e["packets"],
+            })
+            # A late-arriving reverse-DNS name should upgrade a "Local device"
+            # / bare-IP label without waiting for the flow to be re-created.
+            if e["hostname"] and h["name"] in ("Local device", ip):
+                h["name"] = e["hostname"]
+
+        host_list = list(hosts.values())
+        for h in host_list:
+            h["apps"] = sorted(h["apps"], key=h["apps"].get, reverse=True)
+            h["flow_count"] = len(h["connections"])
+        host_list.sort(key=lambda h: h["up_bps"] + h["down_bps"]
+                       + (h["up_bytes"] + h["down_bytes"]) / 1e9, reverse=True)
+        return host_list
 
 
 # Process-wide singleton shared by the sniffer and the API.

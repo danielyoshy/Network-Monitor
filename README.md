@@ -45,6 +45,12 @@ uvicorn backend.main:app --reload
   throughput, tracks totals and peaks.
 - **Metadata enrichment** — optional MaxMind GeoLite2 country/ASN lookups,
   port→application-protocol mapping (HTTPS/DNS/SSH/…), and background reverse DNS.
+- **Readable host view** — traffic is grouped into one row **per host**, each
+  given a friendly name and type instead of a bare number: `142.250.80.14` →
+  "🌐 Google", your router → "📶 Router (Gateway)", a LAN device → "🖥️ Local
+  device" (or its hostname), `8.8.8.8` → "🧭 Google DNS". Every host's
+  individual connections are still one click away in the detail drawer, and the
+  raw IP is always shown alongside the label.
 - **Broadcast loop** — an asyncio aggregator snapshots the flow table each second
   and pushes it to all connected dashboards, decoupled from the capture thread.
 

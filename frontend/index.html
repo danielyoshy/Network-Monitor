@@ -14,7 +14,7 @@
       <button id="closeDrawer" class="btn-close">&times;</button>
     </div>
     <div class="drawer-content">
-      <dl id="drawerBody" class="detail-list"></dl>
+      <div id="drawerBody"></div>
     </div>
   </div>
 
@@ -46,9 +46,9 @@
         <div class="kpi-subtext">Peak <span id="kpiPeakUp">0 B/s</span> &middot; Total <span id="kpiTotalUp">0 B</span></div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-title">Active Flows</div>
-        <div class="kpi-value" id="kpiFlows">0</div>
-        <div class="kpi-subtext">5-tuple sessions in the last window</div>
+        <div class="kpi-title">Hosts You're Talking To</div>
+        <div class="kpi-value" id="kpiHosts">0</div>
+        <div class="kpi-subtext"><span id="kpiFlows">0</span> active connections</div>
       </div>
     </section>
 
@@ -73,18 +73,18 @@
     <!-- Zone 4: Bottom Panel Drill-Down -->
     <section class="bottom-panel">
       <div class="panel table-panel">
-        <h3>Active Flows <span id="flowCount" class="muted-count"></span></h3>
+        <h3>Network Hosts <span id="flowCount" class="muted-count"></span></h3>
         <div class="table-container">
           <table id="flowsTable">
             <thead>
               <tr>
-                <th>Remote Host</th>
-                <th>Scope</th>
-                <th>ASN / Org</th>
-                <th>App</th>
+                <th>Host</th>
+                <th>Type</th>
+                <th>Location</th>
+                <th>Activity</th>
                 <th>&darr; Down</th>
                 <th>&uarr; Up</th>
-                <th>Pkts</th>
+                <th>Conns</th>
                 <th></th>
               </tr>
             </thead>

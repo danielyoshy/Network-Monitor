@@ -105,6 +105,7 @@ function render(snap) {
   // KPI cards
   document.getElementById("kpiDownload").textContent = fmtRate(g.download_bps);
   document.getElementById("kpiUpload").textContent = fmtRate(g.upload_bps);
+  document.getElementById("kpiHosts").textContent = g.active_hosts ?? "0";
   document.getElementById("kpiFlows").textContent = g.active_flows;
   document.getElementById("kpiPeakDown").textContent = fmtRate(g.peak_download_bps);
   document.getElementById("kpiPeakUp").textContent = fmtRate(g.peak_upload_bps);
@@ -124,7 +125,7 @@ function render(snap) {
   protocolChart.data.datasets[0].data = labels.map((k) => snap.protocols[k]);
   protocolChart.update();
 
-  renderFlows(snap.flows);
+  renderHosts(snap.hosts || []);
   renderAlerts(snap.alerts || []);
 }
 
@@ -163,45 +164,67 @@ function renderAlerts(alerts) {
   list.appendChild(frag);
 }
 
-function matchesFilter(f) {
+// A host's category drives its icon and the coloured "Type" badge.
+const CATEGORY = {
+  self:      { icon: "💻", label: "This device", cls: "cat-self" },
+  gateway:   { icon: "📶", label: "Router",       cls: "cat-gateway" },
+  lan:       { icon: "🖥️", label: "Local device", cls: "cat-lan" },
+  dns:       { icon: "🧭", label: "DNS",          cls: "cat-dns" },
+  provider:  { icon: "🌐", label: "Service",      cls: "cat-provider" },
+  multicast: { icon: "📡", label: "Multicast",    cls: "cat-mcast" },
+  broadcast: { icon: "📣", label: "Broadcast",    cls: "cat-bcast" },
+  internet:  { icon: "🌍", label: "Internet",     cls: "cat-internet" },
+};
+function category(cat) { return CATEGORY[cat] || CATEGORY.internet; }
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+function matchesFilter(h) {
   if (!filterText) return true;
-  const hay = `${f.remote_ip} ${f.hostname} ${f.country} ${f.asn} ${f.org} `
-    + `${f.app_proto} ${f.proto} ${f.remote_port} ${f.traffic_type} `
-    + `${f.is_lan ? "lan" : ""}`.toLowerCase();
+  const hay = `${h.name} ${h.ip} ${h.hostname} ${h.country} ${h.asn} ${h.org} `
+    + `${(h.apps || []).join(" ")} ${category(h.category).label} `
+    + `${h.is_lan ? "lan" : ""}`.toLowerCase();
   return hay.includes(filterText);
 }
 
-// Scope label for the remote endpoint: LAN / multicast / broadcast / country.
-function scopeLabel(f) {
-  if (f.traffic_type === "multicast") return { text: "MCAST", cls: "scope-mcast" };
-  if (f.traffic_type === "broadcast") return { text: "BCAST", cls: "scope-bcast" };
-  if (f.is_lan) return { text: "LAN", cls: "scope-lan" };
-  if (f.country) return { text: f.country, cls: "scope-country" };
-  return { text: "—", cls: "" };
+// "Where is this host": LAN, or country + org for internet peers.
+function locationLabel(h) {
+  if (h.is_lan) return "Local network";
+  const parts = [];
+  if (h.country) parts.push(h.country);
+  if (h.org) parts.push(h.org);
+  else if (h.asn) parts.push(h.asn);
+  return parts.join(" · ") || "—";
 }
 
-function renderFlows(flows) {
+function renderHosts(hosts) {
   const tbody = document.getElementById("flowsBody");
-  const visible = flows.filter(matchesFilter);
+  const visible = hosts.filter(matchesFilter);
   document.getElementById("flowCount").textContent =
-    `(${visible.length}${flows.length !== visible.length ? ` / ${flows.length}` : ""})`;
+    `(${visible.length}${hosts.length !== visible.length ? ` / ${hosts.length}` : ""})`;
 
   tbody.innerHTML = "";
   const frag = document.createDocumentFragment();
-  visible.forEach((f) => {
-    const host = f.hostname || f.remote_ip;
-    const scope = scopeLabel(f);
-    const org = f.asn ? `${f.asn}${f.org ? " · " + f.org : ""}` : (f.org || "—");
+  visible.forEach((h) => {
+    const cat = category(h.category);
+    // Show the friendly name; keep the raw IP as a subtitle unless the name
+    // already *is* the IP (then don't repeat it).
+    const sub = h.name === h.ip ? "" : `<div class="sub">${escapeHtml(h.ip)}</div>`;
+    const apps = (h.apps || []).slice(0, 3).map((a) => `<span class="pill">${escapeHtml(a)}</span>`).join(" ");
+    const moreApps = (h.apps || []).length > 3 ? `<span class="sub">+${h.apps.length - 3}</span>` : "";
     const row = document.createElement("tr");
     row.innerHTML = `
-      <td><strong>${host}</strong><div class="sub">${f.remote_ip}:${f.remote_port}</div></td>
-      <td><span class="scope ${scope.cls}">${scope.text}</span></td>
-      <td class="sub">${org}</td>
-      <td><span class="pill">${f.app_proto}</span></td>
-      <td>${fmtRate(f.down_bps)}<div class="sub">${fmtBytes(f.down_bytes)}</div></td>
-      <td>${fmtRate(f.up_bps)}<div class="sub">${fmtBytes(f.up_bytes)}</div></td>
-      <td>${f.packets}</td>
-      <td><button class="btn-inspect" data-key="${f.key}">Inspect</button></td>`;
+      <td><strong>${cat.icon} ${escapeHtml(h.name)}</strong>${sub}</td>
+      <td><span class="scope ${cat.cls}">${cat.label}</span></td>
+      <td class="sub">${escapeHtml(locationLabel(h))}</td>
+      <td>${apps} ${moreApps}</td>
+      <td>${fmtRate(h.down_bps)}<div class="sub">${fmtBytes(h.down_bytes)}</div></td>
+      <td>${fmtRate(h.up_bps)}<div class="sub">${fmtBytes(h.up_bytes)}</div></td>
+      <td>${h.flow_count}</td>
+      <td><button class="btn-inspect" data-key="${escapeHtml(h.ip)}">Inspect</button></td>`;
     frag.appendChild(row);
   });
   tbody.appendChild(frag);
@@ -216,35 +239,56 @@ document.getElementById("flowsBody").addEventListener("click", (e) => {
   if (btn) openDrawer(btn.dataset.key);
 });
 
-function openDrawer(key) {
+function openDrawer(ip) {
   if (!latestSnapshot) return;
-  const f = latestSnapshot.flows.find((x) => x.key === key);
-  if (!f) return;
-  document.getElementById("drawerTitle").textContent = f.hostname || f.remote_ip;
+  const h = (latestSnapshot.hosts || []).find((x) => x.ip === ip);
+  if (!h) return;
+  const cat = category(h.category);
+  document.getElementById("drawerTitle").textContent = `${cat.icon} ${h.name}`;
+
   const rows = [
-    ["Remote IP", `${f.remote_ip}:${f.remote_port}`],
-    ["Hostname", f.hostname || "(unresolved)"],
-    ["Country", f.country || "—"],
-    ["ASN", f.asn || "—"],
-    ["Organisation", f.org || "—"],
-    ["Local IP", f.local_ip],
-    ["Scope", f.is_lan ? "LAN (local network)" : "Internet"],
-    ["Traffic type", f.traffic_type],
-    ["Transport", f.proto],
-    ["Application", f.app_proto],
-    ["Download", `${fmtRate(f.down_bps)} — ${fmtBytes(f.down_bytes)} total`],
-    ["Upload", `${fmtRate(f.up_bps)} — ${fmtBytes(f.up_bytes)} total`],
-    ["Packets", f.packets],
+    ["Type", cat.label],
+    ["IP address", h.ip],
+    ["Hostname", h.hostname || "(unresolved)"],
+    ["Location", h.is_lan ? "Local network" : (h.country || "—")],
+    ["Organisation", h.org || "—"],
+    ["ASN", h.asn || "—"],
+    ["Apps", (h.apps || []).join(", ") || "—"],
+    ["Download", `${fmtRate(h.down_bps)} — ${fmtBytes(h.down_bytes)} total`],
+    ["Upload", `${fmtRate(h.up_bps)} — ${fmtBytes(h.up_bytes)} total`],
+    ["Packets", h.packets],
+    ["Connections", h.flow_count],
   ];
-  document.getElementById("drawerBody").innerHTML = rows
-    .map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+
+  // Per-connection breakdown so the aggregate is still drillable.
+  const conns = (h.connections || [])
+    .slice()
+    .sort((a, b) => (b.down_bps + b.up_bps) - (a.down_bps + a.up_bps))
+    .map((c) => `
+      <tr>
+        <td><span class="pill">${escapeHtml(c.app_proto)}</span></td>
+        <td class="sub">${escapeHtml(c.proto)} :${c.remote_port}</td>
+        <td>${fmtRate(c.down_bps)}</td>
+        <td>${fmtRate(c.up_bps)}</td>
+        <td>${c.packets}</td>
+      </tr>`).join("");
+
+  document.getElementById("drawerBody").innerHTML = `
+    <dl class="detail-list">
+      ${rows.map(([k, v]) => `<dt>${k}</dt><dd>${escapeHtml(v)}</dd>`).join("")}
+    </dl>
+    <h4 class="drawer-subhead">Connections</h4>
+    <table class="conn-table">
+      <thead><tr><th>App</th><th>Port</th><th>&darr;</th><th>&uarr;</th><th>Pkts</th></tr></thead>
+      <tbody>${conns || `<tr><td colspan="5" class="sub">No active connections.</td></tr>`}</tbody>
+    </table>`;
   drawer.classList.add("open");
 }
 
 // --- CONTROLS -----------------------------------------------------------
 document.getElementById("globalSearch").addEventListener("input", (e) => {
   filterText = e.target.value.trim().toLowerCase();
-  if (latestSnapshot) renderFlows(latestSnapshot.flows);  // re-filter without waiting for next tick
+  if (latestSnapshot) renderHosts(latestSnapshot.hosts || []);  // re-filter without waiting for next tick
 });
 
 document.getElementById("togglePause").addEventListener("click", (e) => {

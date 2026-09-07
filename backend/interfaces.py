@@ -41,6 +41,7 @@ class InterfaceInspector:
         self._local_ips = frozenset({"127.0.0.1", "::1"})
         self._subnets = ()          # tuple[ip_network] of directly-connected nets
         self._broadcasts = frozenset()
+        self._gateways = frozenset()  # default-route next hops (the routers)
         self.refresh()
 
     # -- inspection -----------------------------------------------------------
@@ -54,23 +55,30 @@ class InterfaceInspector:
         local = {"127.0.0.1", "::1"}
         subnets = []
         broadcasts = set()
+        gateways = set()
 
         try:
             conf.route.resync()
         except Exception:
             pass
-        self._read_ipv4(local, subnets, broadcasts)
-        self._read_ipv6(local, subnets)
+        self._read_ipv4(local, subnets, broadcasts, gateways)
+        self._read_ipv6(local, subnets, gateways)
 
         # Fallback: if the route table told us nothing, probe the primary
         # outbound address the way the old discover_local_ips() did.
         if len(local) <= 2:
             local |= _probe_local_ips()
 
+        # Let an operator pin the gateway explicitly (also used by the ARP detector).
+        from backend import config
+        if config.GATEWAY_IP:
+            gateways.add(config.GATEWAY_IP)
+
         # Atomic swaps — readers see either the whole old or whole new snapshot.
         self._local_ips = frozenset(local)
         self._subnets = tuple({str(n): n for n in subnets}.values())  # dedup
         self._broadcasts = frozenset(broadcasts)
+        self._gateways = frozenset(gateways)
 
     @staticmethod
     def _is_real_subnet(network):
@@ -78,7 +86,7 @@ class InterfaceInspector:
         that also appear as on-link routes in the OS table."""
         return not (network.is_multicast or network.is_loopback)
 
-    def _read_ipv4(self, local, subnets, broadcasts):
+    def _read_ipv4(self, local, subnets, broadcasts, gateways):
         try:
             routes = list(conf.route.routes)
         except Exception:
@@ -86,6 +94,9 @@ class InterfaceInspector:
         for net, mask, gw, _iface, outip, _metric in routes:
             if outip and outip != _V4_UNSPECIFIED:
                 local.add(outip)
+            # A non-null next hop is a router we send off-subnet traffic to.
+            if gw and gw != _V4_UNSPECIFIED:
+                gateways.add(gw)
             # A directly-connected subnet (not the default route, not a /32
             # host route) — gateway 0.0.0.0 means "on-link".
             if gw == _V4_UNSPECIFIED and 0 < mask < 0xFFFFFFFF:
@@ -99,7 +110,7 @@ class InterfaceInspector:
                 except ValueError:
                     continue
 
-    def _read_ipv6(self, local, subnets):
+    def _read_ipv6(self, local, subnets, gateways):
         try:
             routes = list(conf.route6.routes)
         except Exception:
@@ -112,6 +123,8 @@ class InterfaceInspector:
             for addr in addrs or ():
                 if addr and addr != _V6_UNSPECIFIED:
                     local.add(addr)
+            if gw and gw not in (_V6_UNSPECIFIED, "::1"):
+                gateways.add(gw)
             if plen == 128 and net not in (_V6_UNSPECIFIED, "::1"):
                 local.add(net)
             if gw == _V6_UNSPECIFIED and 0 < plen < 128 and net != _V6_UNSPECIFIED:
@@ -144,6 +157,10 @@ class InterfaceInspector:
         if addr.is_link_local:
             return True
         return any(addr in net for net in self._subnets)
+
+    def is_gateway(self, ip):
+        """True if `ip` is a default-route next hop (i.e. a router/gateway)."""
+        return ip in self._gateways
 
     def is_broadcast(self, ip):
         return ip == _V4_BROADCAST or ip in self._broadcasts
