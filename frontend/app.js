@@ -185,6 +185,19 @@ const ROLE = {
 };
 function role(r) { return ROLE[r] || ROLE.service; }
 
+// Primary service Category -> icon + badge colour. Keys match labels.py.
+const SERVICE_CAT = {
+  "Gaming Infrastructure":      { icon: "🎮", cls: "svc-gaming" },
+  "CDN & Cloud Hosting":        { icon: "☁️", cls: "svc-cloud" },
+  "Secure Web Traffic (HTTPS)": { icon: "🔒", cls: "svc-web" },
+  "Network System Services":    { icon: "🧩", cls: "svc-core" },
+  "Local Endpoint / Loopback":  { icon: "🏠", cls: "svc-local" },
+  "Other Service":              { icon: "🌍", cls: "svc-other" },
+};
+function serviceCat(name) {
+  return SERVICE_CAT[name] || { icon: "•", cls: "svc-other" };
+}
+
 function escapeHtml(s) {
   return String(s).replace(/[&<>"]/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -194,7 +207,7 @@ function matchesFilter(h) {
   if (roleFilter !== "all" && (h.role || "service") !== roleFilter) return false;
   if (!filterText) return true;
   const hay = `${h.name} ${h.ip} ${h.hostname} ${h.country} ${h.asn} ${h.org} `
-    + `${(h.apps || []).join(" ")} ${category(h.category).label} ${role(h.role).label} `
+    + `${(h.apps || []).join(" ")} ${h.service_category || ""} ${role(h.role).label} `
     + `${h.is_lan ? "lan" : ""}`.toLowerCase();
   return hay.includes(filterText);
 }
@@ -228,17 +241,20 @@ function renderHosts(hosts) {
   visible.forEach((h) => {
     const cat = category(h.category);
     const rl = role(h.role);
-    // Show the friendly name; keep the raw IP as a subtitle unless the name
-    // already *is* the IP (then don't repeat it).
+    const sc = serviceCat(h.service_category);
+    // Host cell = the specific Service/Host name; keep the raw IP as a subtitle
+    // unless the name already *is* the IP (then don't repeat it).
     const sub = h.name === h.ip ? "" : `<div class="sub">${escapeHtml(h.ip)}</div>`;
     const apps = (h.apps || []).slice(0, 3).map((a) => `<span class="pill">${escapeHtml(a)}</span>`).join(" ");
     const moreApps = (h.apps || []).length > 3 ? `<span class="sub">+${h.apps.length - 3}</span>` : "";
+    // Category cell = primary Category badge + subtitle (or the role as fallback).
+    const catSub = h.service_subtitle || rl.label;
     const row = document.createElement("tr");
     row.innerHTML = `
       <td><strong>${cat.icon} ${escapeHtml(h.name)}</strong>${sub}</td>
       <td>
-        <span class="scope ${cat.cls}">${cat.label}</span>
-        <div class="role-tag ${rl.cls}">${escapeHtml(h.role_detail || rl.label)}</div>
+        <span class="svc-badge ${sc.cls}">${sc.icon} ${escapeHtml(h.service_category || "—")}</span>
+        <div class="role-tag ${rl.cls}">${escapeHtml(catSub)}</div>
       </td>
       <td class="sub">${escapeHtml(locationLabel(h))}</td>
       <td>${apps} ${moreApps}</td>
@@ -267,8 +283,12 @@ function openDrawer(ip) {
   const cat = category(h.category);
   document.getElementById("drawerTitle").textContent = `${cat.icon} ${h.name}`;
 
+  const catText = h.service_category
+    ? (h.service_subtitle ? `${h.service_category} (${h.service_subtitle})` : h.service_category)
+    : "—";
   const rows = [
-    ["Kind", h.role_detail ? `${role(h.role).label} — ${h.role_detail}` : role(h.role).label],
+    ["Category", catText],
+    ["Kind", role(h.role).label],
     ["Type", cat.label],
     ["IP address", h.ip],
     ["Hostname", h.hostname || "(unresolved)"],

@@ -131,7 +131,24 @@ body {
 .host-tab.active { background-color: var(--accent-blue); color: var(--bg-base); border-color: var(--accent-blue); font-weight: bold; }
 .tab-count { opacity: 0.75; font-size: 0.78rem; }
 
-/* Role marker under the Type badge */
+/* Primary service-category badge (the "Category" column) */
+.svc-badge {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  font-weight: bold;
+  color: var(--bg-base);
+  white-space: nowrap;
+}
+.svc-gaming { background-color: #cba6f7; }   /* mauve  */
+.svc-cloud  { background-color: var(--accent-blue); }
+.svc-web    { background-color: var(--accent-green); }
+.svc-core   { background-color: #94e2d5; }   /* teal   */
+.svc-local  { background-color: var(--accent-peach); }
+.svc-other  { background-color: var(--bg-surface); color: var(--text-muted); font-weight: normal; }
+
+/* Role / subtitle marker under the category badge */
 .role-tag { font-size: 0.72rem; margin-top: 3px; }
 .role-service { color: var(--accent-blue); }
 .role-personal { color: var(--accent-peach); }

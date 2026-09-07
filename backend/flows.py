@@ -290,9 +290,10 @@ class FlowTable:
             h["role"] = labels.classify_role(
                 h["ip"], h["category"], h["is_lan"], ports, h["hostname"],
             )
-            h["role_detail"] = (
-                labels.service_detail(ports, h["hostname"])
-                if h["role"] == "service" else ""
+            # Primary user-facing Category + subtitle (the "Service/Host" name
+            # is h["name"], already set above).
+            h["service_category"], h["service_subtitle"] = labels.classify_service(
+                h["ip"], h["category"], h["is_lan"], ports, h["hostname"],
             )
         host_list.sort(key=lambda h: h["up_bps"] + h["down_bps"]
                        + (h["up_bytes"] + h["down_bytes"]) / 1e9, reverse=True)

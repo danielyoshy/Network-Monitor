@@ -147,7 +147,7 @@ _SERVICE_PORTS_HIGH = {
 
 # Gaming / matchmaking / game-server ports. Traffic to these is a *server*, not
 # a peer, even though they sit in the high-port range.
-_STEAM_PORT_RANGE = range(27000, 27037)          # Steam / Source: 27000-27036
+_STEAM_PORT_RANGE = range(27000, 27051)          # Steam / Source / SDR: 27000-27050
 _STEAM_PORTS = {3478, 4379, 4380, 27014, 27015, 27018, 27019, 27036}  # +SDR/relay
 _GAME_PORTS = {
     1119, 3074, 3479, 3480, 3658, 3724, 6112, 6250, 6672,
@@ -215,18 +215,85 @@ def _is_local_ip(ip):
     return addr.is_private or addr.is_link_local or addr.is_loopback
 
 
-def service_detail(remote_ports, hostname=""):
-    """A specific service sub-label (e.g. "Steam Infrastructure",
-    "Gaming Server"), or "" when the traffic isn't a recognisable game/service.
+# --- Service taxonomy: the user-facing "Category" for each host --------------
+# Domains and ports that place a host in one of the readable service buckets
+# below. Ordering of the buckets in classify_service() is the precedence.
+_GAME_DOMAINS = (
+    "valve.net", "steamdb.net", "steamserver.net", "steamcontent.com",
+    "steampowered.com", "epicgames.com", "riotgames.com", "riotcdn.net",
+    "battle.net", "blizzard.com", "xboxlive.com", "playstation.net", "ea.com",
+)
+_GAME_SERVICE_RANGE = range(27000, 27051)         # Steam / Valve SDR: 27000-27050
+_CDN_DOMAINS = (
+    "akamai.net", "akamaiedge.net", "akamaitechnologies.com",
+    "cloudfront.net", "fastly.net", "fastlylb.net",
+    "1e100.net", "googleusercontent.com", "googlevideo.com", "gvt1.com", "gvt2.com",
+    "azure.com", "azureedge.net", "windows.net", "msedge.net",
+    "aws.com", "amazonaws.com", "cloudflare.net", "cloudflare.com",
+)
+_WEB_PORTS = {80, 443, 8080, 8443}
+_CORE_NET_PORTS = {53, 67, 68, 123}               # DNS / DHCP / NTP
+
+# Category labels (also referenced by the frontend's badge styling).
+CAT_GAMING = "Gaming Infrastructure"
+CAT_CLOUD = "CDN & Cloud Hosting"
+CAT_WEB = "Secure Web Traffic (HTTPS)"
+CAT_CORE = "Network System Services"
+CAT_LOCAL = "Local Endpoint / Loopback"
+CAT_OTHER = "Other Service"
+
+
+def _host_matches(hostname, suffixes):
+    hn = (hostname or "").strip().strip(".").lower()
+    return bool(hn) and any(hn == d or hn.endswith("." + d) for d in suffixes)
+
+
+def _is_loopback(ip):
+    try:
+        return ipaddress.ip_address(ip).is_loopback
+    except ValueError:
+        return False
+
+
+def classify_service(ip, category, is_lan, remote_ports, hostname=""):
+    """Break a host down into a user-friendly service **category** + subtitle.
+
+    Returns ``(category_label, subtitle)``. Precedence (first match wins):
+
+      1. Local & Internal   — loopback / broadcast / multicast / this host.
+      2. Gaming Infrastructure — *.valve.net / *.steamdb.net / *.epicgames.com
+         or ports 27000-27050  (subtitle "Steam / Valve SDR").
+      3. CDN & Cloud Hosting  — known CDN/cloud domains.
+      4. Secure Web Traffic (HTTPS) — ports 80 / 443 / 8080 / 8443.
+      5. Network System Services   — ports 53 / 123 / 67 / 68.
+      6. Local subnet endpoints, then a generic "Other Service" fallback.
     """
-    hn = (hostname or "").lower()
     ports = _int_ports(remote_ports)
-    if (hn.endswith("valve.net") or hn.endswith("steamserver.net") or "steam" in hn
-            or any(p in _STEAM_PORT_RANGE or p in _STEAM_PORTS for p in ports)):
-        return "Steam Infrastructure"
-    if any(p in _GAME_PORTS for p in ports):
-        return "Gaming Server"
-    return ""
+
+    # 1. Definitionally-local endpoints.
+    if _is_loopback(ip) or category in ("self", "broadcast", "multicast"):
+        return (CAT_LOCAL, "")
+
+    # 2. Game infrastructure (domain or Steam/SDR port range).
+    if _host_matches(hostname, _GAME_DOMAINS) or any(p in _GAME_SERVICE_RANGE for p in ports):
+        return (CAT_GAMING, "Steam / Valve SDR")
+
+    # 3. Content delivery & cloud (domain-based).
+    if _host_matches(hostname, _CDN_DOMAINS):
+        return (CAT_CLOUD, "")
+
+    # 4. Web services (no game/CDN override matched above).
+    if any(p in _WEB_PORTS for p in ports):
+        return (CAT_WEB, "")
+
+    # 5. Core network services.
+    if any(p in _CORE_NET_PORTS for p in ports):
+        return (CAT_CORE, "")
+
+    # 6. Local subnet / residential endpoint, else generic service.
+    if is_lan or _is_local_ip(ip):
+        return (CAT_LOCAL, "")
+    return (CAT_OTHER, "")
 
 
 def classify_role(ip, category, is_lan, remote_ports, hostname=""):

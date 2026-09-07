@@ -57,6 +57,11 @@ uvicorn backend.main:app --reload
   filter tabs above the host list. The role is inferred from port behaviour
   (a peer listening on a service port is a server; one seen only on ephemeral
   ports is an end-user device).
+- **Service categories** — every host also gets a specific, readable **Category**
+  next to its name: 🎮 Gaming Infrastructure (Steam / Valve SDR), ☁️ CDN & Cloud
+  Hosting, 🔒 Secure Web Traffic (HTTPS), 🧩 Network System Services (DNS/NTP/DHCP),
+  or 🏠 Local Endpoint / Loopback — matched from reverse-DNS domains and port
+  ranges so the table reads as *what each connection is*, not just a number.
 - **Broadcast loop** — an asyncio aggregator snapshots the flow table each second
   and pushes it to all connected dashboards, decoupled from the capture thread.
 
