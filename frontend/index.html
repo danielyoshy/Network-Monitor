@@ -2,35 +2,101 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Network Traffic Monitor</title>
+  <title>SecOps Network Dashboard</title>
   <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-  <div class="container">
-    <h1>Live Network Traffic Monitor</h1>
-    
-    <div class="status-bar">
-      Status: <span id="status" class="disconnected">Connecting...</span>
+  <!-- Sliding Drawer: per-flow inspection -->
+  <div id="sideDrawer" class="drawer">
+    <div class="drawer-header">
+      <h3 id="drawerTitle">Flow Details</h3>
+      <button id="closeDrawer" class="btn-close">&times;</button>
     </div>
-
-    <h2>Real-Time Packet Log</h2>
-    <div class="table-container">
-      <table id="logTable">
-        <thead>
-          <tr>
-            <th>Protocol</th>
-            <th>Source IP</th>
-            <th>Destination IP</th>
-            <th>Length (Bytes)</th>
-          </tr>
-        </thead>
-        <tbody id="logBody">
-          <!-- Live packet rows dynamically injected here -->
-        </tbody>
-      </table>
+    <div class="drawer-content">
+      <dl id="drawerBody" class="detail-list"></dl>
     </div>
   </div>
 
+  <div class="dashboard">
+    <!-- Zone 1: Top Navigation & Filter Bar -->
+    <header class="top-bar">
+      <div class="status-indicator">
+        <span class="shield-icon">&#128737;</span>
+        <span id="globalStatus" class="status-text healthy">Connecting&hellip;</span>
+      </div>
+      <div class="search-container">
+        <input type="text" id="globalSearch" placeholder="Filter by IP, host, country, or protocol&hellip;">
+      </div>
+      <div class="controls">
+        <button id="togglePause" class="btn">Pause Traffic</button>
+      </div>
+    </header>
+
+    <!-- Zone 2: KPI Cards -->
+    <section class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-title">Download</div>
+        <div class="kpi-value" id="kpiDownload">0 B/s</div>
+        <div class="kpi-subtext">Peak <span id="kpiPeakDown">0 B/s</span> &middot; Total <span id="kpiTotalDown">0 B</span></div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-title">Upload</div>
+        <div class="kpi-value" id="kpiUpload">0 B/s</div>
+        <div class="kpi-subtext">Peak <span id="kpiPeakUp">0 B/s</span> &middot; Total <span id="kpiTotalUp">0 B</span></div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-title">Active Flows</div>
+        <div class="kpi-value" id="kpiFlows">0</div>
+        <div class="kpi-subtext">5-tuple sessions in the last window</div>
+      </div>
+    </section>
+
+    <!-- Zone 2.5: Anomaly Alerts -->
+    <section class="panel alerts-panel">
+      <h3>Anomaly Alerts <span id="alertCount" class="muted-count"></span></h3>
+      <div id="alertsList" class="alerts-list">
+        <div class="no-alerts">No anomalies detected.</div>
+      </div>
+    </section>
+
+    <!-- Zone 3: Center Stage Charts -->
+    <section class="charts-grid">
+      <div class="panel chart-panel">
+        <canvas id="bandwidthChart"></canvas>
+      </div>
+      <div class="panel chart-panel">
+        <canvas id="flowsChart"></canvas>
+      </div>
+    </section>
+
+    <!-- Zone 4: Bottom Panel Drill-Down -->
+    <section class="bottom-panel">
+      <div class="panel table-panel">
+        <h3>Active Flows <span id="flowCount" class="muted-count"></span></h3>
+        <div class="table-container">
+          <table id="flowsTable">
+            <thead>
+              <tr>
+                <th>Remote Host</th>
+                <th>Country</th>
+                <th>ASN / Org</th>
+                <th>App</th>
+                <th>&darr; Down</th>
+                <th>&uarr; Up</th>
+                <th>Pkts</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="flowsBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="panel donut-panel">
+        <canvas id="protocolChart"></canvas>
+      </div>
+    </section>
+  </div>
   <script src="app.js"></script>
 </body>
 </html>

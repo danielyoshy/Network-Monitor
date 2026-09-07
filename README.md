@@ -1,16 +1,93 @@
 # Network Traffic Monitor
 
-A real-time packet analyzer built with Python, FastAPI, WebSockets, and JavaScript.
+A real-time, flow-based packet analyzer built with Python, Scapy, FastAPI,
+WebSockets, and JavaScript. Inspired by Sniffnet's architecture: raw frames are
+aggregated into **network flows**, enriched with geolocation/DNS metadata, and
+streamed to a live dashboard.
 
-## Features
-- Captures Layer 2–4 network traffic (Ethernet, IP, TCP, UDP, ARP) using Scapy and raw sockets.
-- Multithreaded background sniffer streaming data asynchronously over WebSockets.
-- Live dashboard displaying real-time packet logs.
+## Architecture
 
-## Setup & Execution
-1. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-## Run the Program
+```
+   NIC ──BPF filter──> Scapy sniff() ──5-tuple──> FlowTable ──1s tick──> WebSocket ──> Dashboard
+ (kernel drops noise)   (daemon thread)          (aggregation)   (broadcast)     (Chart.js UI)
+```
+
+- **Flow aggregation** — packets sharing a 5-tuple (src IP/port, dst IP/port,
+  transport) collapse into one bidirectional flow. Direction is decided against
+  the host's own IPs, splitting traffic into upload vs download.
+- **Rolling metrics** — a 1-second timer converts per-flow byte counts into live
+  throughput, tracks totals and peaks.
+- **Metadata enrichment** — optional MaxMind GeoLite2 country/ASN lookups,
+  port→application-protocol mapping (HTTPS/DNS/SSH/…), and background reverse DNS.
+- **Broadcast loop** — an asyncio aggregator snapshots the flow table each second
+  and pushes it to all connected dashboards, decoupled from the capture thread.
+
+## Anomaly detection
+
+`backend/detectors.py` runs four live detectors over the capture path and raises
+scored alerts shown in the dashboard's Anomaly Alerts panel. Each is a real-time
+adaptation of a playbook from the
+[Anthropic-Cybersecurity-Skills](https://github.com/mukul975/Anthropic-Cybersecurity-Skills)
+collection:
+
+| Detector | Technique | Based on skill | MITRE |
+|----------|-----------|----------------|-------|
+| **C2 beaconing** | Coefficient-of-variation on connection intervals (CV < 0.20 == periodic) | `hunting-for-beaconing-with-frequency-analysis` | T1071 |
+| **Port scan** | One source touching many distinct ports/hosts in a window | `detecting-port-scanning-with-fail2ban` | T1046 |
+| **DNS exfiltration** | Shannon entropy + subdomain length + uniqueness scoring per base domain | `detecting-dns-exfiltration-with-dns-query-analysis` | T1048 |
+| **ARP poisoning** | IP→MAC change / flip-flop / flood / gateway impersonation | `detecting-arp-poisoning-in-network-traffic` | T1557.002 |
+
+All thresholds are tunable via `NM_*` environment variables (see `backend/config.py`).
+Pin your gateway with `NM_GATEWAY_IP` / `NM_GATEWAY_MAC` to catch gateway spoofing directly.
+
+## Setup
+
+```bash
+pip install -r requirements.txt
+```
+
+`geoip2` is optional — without it (or without the GeoLite2 databases) country/ASN
+columns simply stay blank.
+
+## Run
+
+**Requires Administrator / root privileges** for packet capture (install
+[Npcap](https://npcap.com/) on Windows). Run from the repository root:
+
+```bash
 uvicorn backend.main:app --reload
-open index.html
+```
+
+Then open **http://localhost:8000** — FastAPI serves the dashboard itself. Do not
+open `frontend/index.html` from the filesystem; it must be served by the server.
+
+## Configuration
+
+All settings are environment variables (see `backend/config.py`):
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `NM_BPF` | `not host 127.0.0.1 and not port 5353` | Kernel-level BPF capture filter |
+| `NM_INTERFACE` | default iface | Interface to capture on |
+| `NM_EMIT_INTERVAL` | `1.0` | Rolling-window / broadcast cadence (s) |
+| `NM_FLOW_IDLE_TIMEOUT` | `120` | Idle seconds before a flow is closed |
+| `NM_MAX_FLOWS` | `200` | Max flows sent to the UI per tick |
+| `NM_GEOIP_COUNTRY_DB` | — | Path to `GeoLite2-Country.mmdb` |
+| `NM_GEOIP_ASN_DB` | — | Path to `GeoLite2-ASN.mmdb` |
+
+Example (PowerShell), capture only web traffic with GeoIP enabled:
+
+```powershell
+$env:NM_BPF="tcp port 443 or tcp port 80"
+$env:NM_GEOIP_COUNTRY_DB="C:\geoip\GeoLite2-Country.mmdb"
+$env:NM_GEOIP_ASN_DB="C:\geoip\GeoLite2-ASN.mmdb"
+uvicorn backend.main:app --reload
+```
+
+## Pushing changes to Git
+
+```bash
+git add .
+git commit -m "your commit message"
+git push
+```

@@ -2,3 +2,6 @@ scapy
 fastapi
 uvicorn
 websockets
+# Optional: enables MaxMind GeoLite2 country/ASN enrichment.
+# Safe to omit — the app degrades gracefully without it.
+geoip2
